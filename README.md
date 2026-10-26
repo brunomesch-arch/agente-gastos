@@ -48,12 +48,24 @@ Você vai precisar de: conta no [Supabase](https://supabase.com) (o plano gratui
 ### 1. Banco de dados (Supabase)
 
 1. Crie um projeto no Supabase (região **South America (São Paulo)**).
-2. Instale o [Supabase CLI](https://supabase.com/docs/guides/cli) e, na pasta do projeto:
+2. Conecte este repositório para o deploy automático: no projeto, **Project Settings → Integrations → GitHub**:
+   - repositório `brunomesch-arch/agente-gastos`;
+   - *Supabase directory*: `supabase`;
+   - *Production branch*: `main`;
+   - ligue **Deploy to production**;
+   - deixe **Automatic branching** desligado: branches de preview têm custo de compute.
+
+   A partir daí, todo push no `main` aplica as migrations novas e publica a função `whatsapp-webhook` (declarada no `supabase/config.toml`, sem verificação de JWT). O restante do `config.toml` (Auth, API) não é aplicado em produção.
+
+   <details><summary>Alternativa sem a integração: Supabase CLI</summary>
+
    ```bash
    supabase login
    supabase link --project-ref SEU_PROJECT_REF
    supabase db push
+   supabase functions deploy whatsapp-webhook --no-verify-jwt
    ```
+   </details>
 3. Cadastre vocês dois (SQL Editor do Supabase). Telefone no formato internacional, **com** o 9:
    ```sql
    insert into membros (nome, telefone, email) values
@@ -67,21 +79,19 @@ Você vai precisar de: conta no [Supabase](https://supabase.com) (o plano gratui
 
 O agente precisa de um número **só dele** (chip novo ou número virtual), que vocês salvam como contato. No painel do Bird, conecte o número em **WhatsApp → Numbers** (o cadastro passa pela Meta). Depois, em **Platform tools → API keys**, crie uma chave com permissão de WhatsApp.
 
-### 3. Função do agente
+### 3. Segredos da função
 
-```bash
-supabase secrets set \
-  ANTHROPIC_API_KEY=sk-ant-... \
-  BIRD_API_KEY=bk_us1_... \
-  BIRD_NUMERO_AGENTE=+55DDDNUMERODOAGENTE \
-  TRANSCRICAO_PROVEDOR=openai \
-  OPENAI_API_KEY=sk-...
-# (ou TRANSCRICAO_PROVEDOR=groq e GROQ_API_KEY=gsk_...)
+Em **Edge Functions → Secrets** no painel do Supabase, cadastre:
 
-supabase functions deploy whatsapp-webhook --no-verify-jwt
-```
+| Nome | Valor |
+|---|---|
+| `ANTHROPIC_API_KEY` | `sk-ant-...` |
+| `BIRD_API_KEY` | `bk_us1_...` (ou `bk_eu1_...`) |
+| `BIRD_NUMERO_AGENTE` | número do agente, ex. `+5547999998888` |
+| `TRANSCRICAO_PROVEDOR` | `openai` ou `groq` |
+| `OPENAI_API_KEY` ou `GROQ_API_KEY` | conforme o provedor |
 
-Opcionais: `CLAUDE_MODELO` (padrão `claude-opus-5-5`) e `CLAUDE_ESFORCO` (padrão `medium`; `low` é mais barato e rápido).
+Opcionais: `CLAUDE_MODELO` (padrão `claude-opus-5-5`) e `CLAUDE_ESFORCO` (padrão `medium`; `low` é mais barato e rápido). `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` já vêm prontos nas Edge Functions.
 
 ### 4. Webhook do Bird
 
@@ -90,11 +100,7 @@ Em **Platform tools → Webhooks** no Bird, crie um endpoint:
 - URL: `https://SEU_PROJECT_REF.supabase.co/functions/v1/whatsapp-webhook`
 - Evento: `whatsapp.received`
 
-O Bird mostra o segredo (`whsec_...`) **uma vez só**. Guarde e configure:
-
-```bash
-supabase secrets set BIRD_WEBHOOK_SECRET=whsec_...
-```
+O Bird mostra o segredo (`whsec_...`) **uma vez só**. Cadastre-o em **Edge Functions → Secrets** como `BIRD_WEBHOOK_SECRET`.
 
 Mande um "oi" para o número do agente. Ele deve responder.
 
