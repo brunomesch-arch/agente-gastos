@@ -1,0 +1,6 @@
+# Configuração mínima para o Supabase CLI (supabase link / db push / functions deploy).
+project_id = "agente-gastos"
+
+[functions.whatsapp-webhook]
+# O Bird não manda JWT do Supabase; a função confere a assinatura do próprio Bird.
+verify_jwt = false
