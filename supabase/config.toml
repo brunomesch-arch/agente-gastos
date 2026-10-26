@@ -1,6 +1,9 @@
-# Configuração mínima para o Supabase CLI (supabase link / db push / functions deploy).
+# Configuração mínima para o Supabase CLI e a integração GitHub do Supabase.
 project_id = "agente-gastos"
 
-[functions.whatsapp-webhook]
-# O Bird não manda JWT do Supabase; a função confere a assinatura do próprio Bird.
-verify_jwt = false
+# O agente de WhatsApp (supabase/functions/whatsapp-webhook) está desativado:
+# o uso atual é só pelo painel. Para religar, descomente o bloco abaixo e
+# siga a seção "Agente de WhatsApp (opcional)" do README.
+#
+# [functions.whatsapp-webhook]
+# verify_jwt = false

@@ -11,7 +11,7 @@ export const supabase = createClient(url ?? "http://localhost", chave ?? "sem-ch
 export interface Membro {
   id: string;
   nome: string;
-  telefone: string;
+  telefone: string | null;
   email: string | null;
 }
 
@@ -111,6 +111,36 @@ export function somarMes(mes: string, delta: number): string {
   const [a, m] = mes.split("-").map(Number);
   const d = new Date(a, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Data padrão para lançar num mês: hoje, se for o mês atual; senão, o último dia dele. */
+export function dataPadrao(mes: string): string {
+  const hoje = hojeISO();
+  if (hoje.startsWith(mes)) return hoje;
+  const [a, m] = mes.split("-").map(Number);
+  return `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
+}
+
+/** Soma meses a uma data AAAA-MM-DD mantendo o dia possível (31/01 + 1 → 28/02). */
+export function somarMesesData(data: string, meses: number): string {
+  const [a, m, d] = data.split("-").map(Number);
+  const alvo = new Date(a, m - 1 + meses, 1);
+  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  return `${alvo.getFullYear()}-${String(alvo.getMonth() + 1).padStart(2, "0")}-${String(Math.min(d, ultimo)).padStart(2, "0")}`;
+}
+
+/** Divide um valor em parcelas de centavos exatos; a diferença vai na primeira. */
+export function dividirParcelas(valor: number, parcelas: number): number[] {
+  const centavos = Math.round(valor * 100);
+  const base = Math.floor(centavos / parcelas);
+  return Array.from({ length: parcelas }, (_, i) => (i === 0 ? centavos - base * (parcelas - 1) : base) / 100);
+}
+
+/** Aceita "1.234,56", "1234,56" ou "1234.56". */
+export function lerValor(texto: string): number {
+  const limpo = texto.trim().replace(/\s|R\$/g, "");
+  const normal = limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo;
+  return Math.round(Number(normal) * 100) / 100;
 }
 
 export function limitesMes(mes: string): [string, string] {

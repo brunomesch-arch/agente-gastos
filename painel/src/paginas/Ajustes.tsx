@@ -7,7 +7,7 @@ export default function Ajustes({ categorias, membros, recarregarBase }: Base) {
   const [erro, setErro] = useState("");
   const [orcamentoTotal, setOrcamentoTotal] = useState("");
   const [novaCategoria, setNovaCategoria] = useState({ nome: "", emoji: "" });
-  const [novoMembro, setNovoMembro] = useState({ nome: "", telefone: "", email: "" });
+  const [novoMembro, setNovoMembro] = useState({ nome: "", email: "" });
 
   useEffect(() => {
     supabase.from("configuracoes").select("valor").eq("chave", "orcamento_total_mensal").maybeSingle()
@@ -100,22 +100,21 @@ export default function Ajustes({ categorias, membros, recarregarBase }: Base) {
       </section>
 
       <section className="cartao secao">
-        <h2>Pessoas da casa <small>quem pode mandar gastos no WhatsApp e entrar no painel</small></h2>
+        <h2>Pessoas da casa <small>quem entra no painel (pelo e-mail) e aparece em “quem gastou”</small></h2>
         <table>
           <thead>
-            <tr><th>Nome</th><th>WhatsApp</th><th className="esconder-celular">E-mail do painel</th></tr>
+            <tr><th>Nome</th><th>E-mail do painel</th></tr>
           </thead>
           <tbody>
             {membros.map((m) => (
-              <tr key={m.id}><td>{m.nome}</td><td>{m.telefone}</td><td className="esconder-celular">{m.email ?? "—"}</td></tr>
+              <tr key={m.id}><td>{m.nome}</td><td>{m.email ?? "—"}</td></tr>
             ))}
           </tbody>
         </table>
         <form className="formulario secao" onSubmit={async (e) => {
           e.preventDefault();
-          const telefone = "+" + novoMembro.telefone.replace(/\D/g, "");
-          if (await executar(() => supabase.from("membros").insert({ nome: novoMembro.nome.trim(), telefone, email: novoMembro.email.trim() || null }))) {
-            setNovoMembro({ nome: "", telefone: "", email: "" });
+          if (await executar(() => supabase.from("membros").insert({ nome: novoMembro.nome.trim(), email: novoMembro.email.trim() || null }))) {
+            setNovoMembro({ nome: "", email: "" });
           }
         }}>
           <label className="campo">
@@ -123,12 +122,8 @@ export default function Ajustes({ categorias, membros, recarregarBase }: Base) {
             <input required value={novoMembro.nome} onChange={(e) => setNovoMembro({ ...novoMembro, nome: e.target.value })} />
           </label>
           <label className="campo">
-            WhatsApp (com DDI e DDD)
-            <input required placeholder="+55 47 99999-8888" value={novoMembro.telefone} onChange={(e) => setNovoMembro({ ...novoMembro, telefone: e.target.value })} />
-          </label>
-          <label className="campo">
-            E-mail
-            <input type="email" value={novoMembro.email} onChange={(e) => setNovoMembro({ ...novoMembro, email: e.target.value })} />
+            E-mail (login do painel)
+            <input type="email" required value={novoMembro.email} onChange={(e) => setNovoMembro({ ...novoMembro, email: e.target.value })} />
           </label>
           <button className="botao">Adicionar pessoa</button>
         </form>

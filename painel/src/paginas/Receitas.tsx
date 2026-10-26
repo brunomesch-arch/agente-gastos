@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Base } from "../App";
 import { Erro } from "../componentes";
-import { dataCurta, hojeISO, limitesMes, nomeMes, ok, reais, supabase } from "../dados";
+import { dataCurta, dataPadrao, limitesMes, lerValor, nomeMes, ok, reais, supabase } from "../dados";
 
 interface Receita {
   id: number;
@@ -25,7 +25,11 @@ export default function Receitas({ mes, membros }: Base) {
   const [extras, setExtras] = useState<Extra[]>([]);
   const [erro, setErro] = useState("");
   const [editando, setEditando] = useState<Partial<Receita> | null>(null);
-  const [extra, setExtra] = useState({ valor: "", descricao: "", data: hojeISO(), membro_id: "" });
+  const [extra, setExtra] = useState({ valor: "", descricao: "", data: dataPadrao(mes), membro_id: "" });
+
+  useEffect(() => {
+    setExtra((x) => ({ ...x, data: dataPadrao(mes) }));
+  }, [mes]);
 
   const carregar = useCallback(async () => {
     try {
@@ -70,7 +74,7 @@ export default function Receitas({ mes, membros }: Base) {
     e.preventDefault();
     const feito = await executar(() =>
       supabase.from("receitas_extras").insert({
-        valor: Number(extra.valor.replace(",", ".")),
+        valor: lerValor(extra.valor),
         descricao: extra.descricao,
         data: extra.data,
         membro_id: extra.membro_id || null,
@@ -93,7 +97,7 @@ export default function Receitas({ mes, membros }: Base) {
           </thead>
           <tbody>
             {receitas.length === 0 && (
-              <tr><td colSpan={5} className="vazio">Cadastre abaixo ou mande no WhatsApp: “meu salário é uns 8 mil, cai dia 5”.</td></tr>
+              <tr><td colSpan={5} className="vazio">Cadastre abaixo as entradas de todo mês (salário, pró-labore…) pelo valor médio.</td></tr>
             )}
             {receitas.map((r) => (
               <tr key={r.id} style={r.ativa ? undefined : { opacity: 0.5 }}>

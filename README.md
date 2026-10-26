@@ -1,152 +1,97 @@
-# 💰 Agente de gastos da casa
+# 💰 Gastos da Casa
 
-Controle de gastos do Bruno e da Larissa pelo WhatsApp. Vocês mandam para o número do agente:
+Controle financeiro do Bruno e da Larissa: um painel web onde vocês lançam os gastos do mês e acompanham para onde o dinheiro está indo.
 
-- 📷 **foto do cupom fiscal** (NFC-e), comprovante de Pix, boleto ou foto da maquininha;
-- 🎙️ **áudio** ("gastei 87 e 50 na farmácia, no débito");
-- 💬 **texto** ("40 padaria", "a Larissa pagou 230 de luz");
+- **Resumo do mês:** total gasto contra o orçamento, gasto por categoria (com limite por categoria), onde mais gastaram, quem gastou, forma de pagamento, evolução dos últimos 6 meses, receita prevista e saldo previsto.
+- **Gastos:** lançamento rápido em sequência (Enter salva e volta ao campo de valor), compras parceladas (uma parcela por mês), edição, filtros e busca.
+- **Contas fixas:** cadastro com valor previsto e vencimento; no mês, marque as que foram pagas, ajuste o valor real e registre todas de uma vez.
+- **Receitas:** entradas recorrentes pelo valor médio (salário, pró-labore) e entradas extras do mês (13º, bônus, reembolso).
+- **Orçamento e ajustes:** orçamento total da casa, orçamento por categoria, categorias e pessoas.
 
-e ele registra o gasto, com categoria, estabelecimento, quem pagou e itens do cupom. Também responde perguntas ("quanto já gastamos de mercado?", "resumo do mês") e cadastra contas fixas, receitas e orçamentos pela conversa.
-
-O **painel web** mostra o mês: total gasto contra o orçamento, gasto por categoria e por estabelecimento, quem gastou, contas fixas pagas e pendentes, receita média e saldo previsto.
-
-```
-Bruno / Larissa ──WhatsApp──► número do agente (Bird)
-                                   │ webhook whatsapp.received (assinado)
-                                   ▼
-                 Supabase Edge Function  whatsapp-webhook
-                   • confere a assinatura e ignora números desconhecidos
-                   • foto/PDF → Claude lê o cupom
-                   • áudio → transcrição (OpenAI ou Groq) → Claude
-                   • Claude usa ferramentas: registrar_gasto, resumo_do_mes,
-                     pagar_conta_fixa, definir_orcamento...
-                   • responde no WhatsApp: "✅ R$ 187,40 · 🛒 Mercado · Angeloni"
-                                   │
-                                   ▼
-                 Supabase Postgres (+ bucket privado com os comprovantes)
-                                   ▲
-                 Painel web (React) — login por link no e-mail, protegido por RLS
-```
+Os dados ficam num banco Postgres no Supabase. Só os e-mails cadastrados como pessoas da casa conseguem entrar (login por link enviado ao e-mail) e ver os dados; isso é garantido no próprio banco (RLS).
 
 ## Estrutura
 
 | Caminho | O que é |
 |---|---|
-| `supabase/migrations/` | Tabelas, categorias iniciais, relatórios (`resumo_mes`, `historico_meses`) e RLS |
-| `supabase/functions/whatsapp-webhook/` | Recebe os eventos do Bird e responde 204 na hora |
-| `supabase/functions/_shared/agente.ts` | Prompt e ciclo do agente (Claude + ferramentas) |
-| `supabase/functions/_shared/ferramentas.ts` | As ações que o agente pode executar no banco |
-| `supabase/functions/_shared/processar.ts` | Mídia, transcrição, contexto, histórico e resposta |
-| `supabase/functions/_shared/bird.ts` | API do Bird: assinatura, download de mídia, envio |
-| `supabase/functions/tests/` | Testes de unidade (`deno test`) |
 | `painel/` | Painel web (Vite + React + supabase-js) |
+| `supabase/migrations/` | Tabelas, categorias iniciais, relatórios (`resumo_mes`, `historico_meses`) e RLS |
+| `supabase/functions/` | Agente de WhatsApp, **desativado** (veja o fim deste arquivo) |
 
 ## Instalação
 
-Você vai precisar de: conta no [Supabase](https://supabase.com) (o plano gratuito serve), chave da [API do Claude](https://platform.claude.com/settings/keys), chave da [OpenAI](https://platform.openai.com/api-keys) **ou** da [Groq](https://console.groq.com/keys) para transcrever áudios, e a conta do **Bird** com um número de WhatsApp só para o agente.
-
 ### 1. Banco de dados (Supabase)
 
-1. Crie um projeto no Supabase (região **South America (São Paulo)**).
-2. Conecte este repositório para o deploy automático: no projeto, **Project Settings → Integrations → GitHub**:
-   - repositório `brunomesch-arch/agente-gastos`;
-   - *Supabase directory*: `supabase`;
-   - *Production branch*: `main`;
-   - ligue **Deploy to production**;
-   - deixe **Automatic branching** desligado: branches de preview têm custo de compute.
+O projeto Supabase está ligado a este repositório pela integração GitHub (**Project Settings → Integrations → GitHub**, diretório `supabase`, branch `main`, *Deploy to production* ligado). Todo push no `main` aplica as migrations novas automaticamente.
 
-   A partir daí, todo push no `main` aplica as migrations novas e publica a função `whatsapp-webhook` (declarada no `supabase/config.toml`, sem verificação de JWT). O restante do `config.toml` (Auth, API) não é aplicado em produção.
+Depois do primeiro deploy, no Supabase:
 
-   <details><summary>Alternativa sem a integração: Supabase CLI</summary>
-
-   ```bash
-   supabase login
-   supabase link --project-ref SEU_PROJECT_REF
-   supabase db push
-   supabase functions deploy whatsapp-webhook --no-verify-jwt
-   ```
-   </details>
-3. Cadastre vocês dois (SQL Editor do Supabase). Telefone no formato internacional, **com** o 9:
+1. **SQL Editor** — cadastre vocês dois (o e-mail é o login do painel):
    ```sql
-   insert into membros (nome, telefone, email) values
-     ('Bruno',   '+55DDDNUMERO', 'brunomesch@gmail.com'),
-     ('Larissa', '+55DDDNUMERO', 'email-da-larissa@...');
+   insert into membros (nome, email) values
+     ('Bruno',   'brunomesch@gmail.com'),
+     ('Larissa', 'EMAIL-DA-LARISSA');
    ```
-   Só esses números são atendidos; mensagens de outros números são ignoradas.
-4. Em **Authentication → Sign In / Providers**, desative "Allow new users to sign up". Em **Authentication → Users**, use **Invite user** para os dois e-mails acima (é o login do painel).
+2. **Authentication → Sign In / Providers** — desative *Allow new users to sign up*.
+3. **Authentication → Users → Invite user** — convide os dois e-mails acima.
 
-### 2. Número de WhatsApp no Bird
+<details><summary>Sem a integração GitHub: Supabase CLI</summary>
 
-O agente precisa de um número **só dele** (chip novo ou número virtual), que vocês salvam como contato. No painel do Bird, conecte o número em **WhatsApp → Numbers** (o cadastro passa pela Meta). Depois, em **Platform tools → API keys**, crie uma chave com permissão de WhatsApp.
+```bash
+supabase login
+supabase link --project-ref SEU_PROJECT_REF
+supabase db push
+```
+</details>
 
-### 3. Segredos da função
+### 2. Publicar o painel (Vercel)
 
-Em **Edge Functions → Secrets** no painel do Supabase, cadastre:
+1. Em [vercel.com/new](https://vercel.com/new), importe o repositório `brunomesch-arch/agente-gastos`.
+2. **Root Directory:** `painel` (o framework Vite é detectado sozinho).
+3. **Environment Variables** — no Supabase, em **Project Settings → API** (ou **API Keys**):
+   - `VITE_SUPABASE_URL` = `https://SEU_PROJECT_REF.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = a chave pública (*anon* ou *publishable*). Ela pode ir para o navegador: quem protege os dados é o login + RLS. **Nunca** use a *service_role*/*secret* aqui.
+4. **Deploy.** Copie o endereço gerado (ex.: `https://agente-gastos.vercel.app`).
+5. No Supabase, **Authentication → URL Configuration**: coloque esse endereço em *Site URL* e em *Redirect URLs*.
 
-| Nome | Valor |
-|---|---|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` |
-| `BIRD_API_KEY` | `bk_us1_...` (ou `bk_eu1_...`) |
-| `BIRD_NUMERO_AGENTE` | número do agente, ex. `+5547999998888` |
-| `TRANSCRICAO_PROVEDOR` | `openai` ou `groq` |
-| `OPENAI_API_KEY` ou `GROQ_API_KEY` | conforme o provedor |
+A cada push no `main`, a Vercel publica a versão nova do painel. Netlify e Cloudflare Pages funcionam do mesmo jeito (raiz `painel`, comando `npm run build`, saída `dist`).
 
-Opcionais: `CLAUDE_MODELO` (padrão `claude-opus-5-5`) e `CLAUDE_ESFORCO` (padrão `medium`; `low` é mais barato e rápido). `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` já vêm prontos nas Edge Functions.
-
-### 4. Webhook do Bird
-
-Em **Platform tools → Webhooks** no Bird, crie um endpoint:
-
-- URL: `https://SEU_PROJECT_REF.supabase.co/functions/v1/whatsapp-webhook`
-- Evento: `whatsapp.received`
-
-O Bird mostra o segredo (`whsec_...`) **uma vez só**. Cadastre-o em **Edge Functions → Secrets** como `BIRD_WEBHOOK_SECRET`.
-
-Mande um "oi" para o número do agente. Ele deve responder.
-
-### 5. Painel web
+### Rodar o painel no computador
 
 ```bash
 cd painel
-cp .env.example .env     # preencha URL e chave pública (Project Settings → API)
+cp .env.example .env     # preencha as duas variáveis
 npm install
 npm run dev              # http://localhost:5173
 ```
 
-Para publicar, use Vercel, Netlify ou Cloudflare Pages com a pasta `painel` como raiz, comando `npm run build`, saída `dist` e as duas variáveis `VITE_...`. Depois, em **Authentication → URL Configuration** no Supabase, coloque o endereço do painel em *Site URL* e em *Redirect URLs*.
+## Rotina sugerida
 
-## Como usar no WhatsApp
+**Uma vez:** em *Contas fixas*, cadastre aluguel, condomínio, luz, internet, escola, assinaturas… com o valor médio e o dia de vencimento. Em *Receitas*, cadastre as entradas de todo mês. Em *Orçamento e ajustes*, defina o orçamento da casa e os limites por categoria que importam (mercado, restaurantes…).
 
-| Você manda | O agente faz |
-|---|---|
-| foto do cupom do mercado | registra total, loja, CNPJ, data, forma de pagamento e itens |
-| 🎙️ "gastei 120 no posto, crédito" | registra em Combustível |
-| "a Larissa pagou 89,90 na farmácia ontem" | registra para a Larissa, com a data de ontem |
-| "tênis 630 em 3x no cartão" | lança 3 parcelas de R$ 210, uma por mês |
-| "na verdade foi 45" / "muda pra lazer" / "apaga esse" | corrige o último lançamento |
-| "aluguel 2.500 todo dia 10" | cadastra conta fixa |
-| foto do boleto da luz | dá baixa na conta fixa do mês |
-| "meu salário é uns 8 mil, cai dia 5" | cadastra a receita média |
-| "orçamento de mercado 1.500" / "orçamento da casa 9 mil" | define orçamentos |
-| "resumo do mês" / "onde gastamos mais?" / "compara com o mês passado" | responde com os números do banco |
-
-## Custos
-
-- **Claude**: cada mensagem é uma chamada (ou poucas) ao modelo. Uma foto de cupom custa na ordem de alguns centavos de dólar no Opus 5.5. Para baratear, use `CLAUDE_ESFORCO=low` ou `CLAUDE_MODELO=claude-sonnet-5-5`.
-- **Transcrição**: frações de centavo por minuto de áudio.
-- **Bird**: respostas dentro de 24h da mensagem de vocês são mensagens de serviço; veja a tabela de preços do Bird.
-- **Supabase**: o plano gratuito comporta folgado o uso de uma casa.
+**Todo mês** (ou toda semana):
+1. Escolha o mês no topo.
+2. *Contas fixas*: marque as pagas, corrija o valor real (luz e água variam) e clique em **Registrar**.
+3. *Gastos*: lance as compras olhando a fatura do cartão e o extrato. Categoria, pessoa, data e forma de pagamento continuam preenchidos entre um lançamento e outro.
+4. *Receitas*: lance entradas extras, se houver.
+5. *Resumo*: veja o mês contra o orçamento e as maiores categorias.
 
 ## Desenvolvimento
 
 ```bash
-deno test --allow-env supabase/functions/tests/   # testes de unidade
-deno check supabase/functions/whatsapp-webhook/index.ts
-cd painel && npm run build                        # checa tipos e gera o painel
+cd painel && npm run build    # checa tipos e gera o painel em painel/dist
 ```
 
-## Próximos passos possíveis
+## Agente de WhatsApp (opcional, desativado)
 
-- Ler o QR code da NFC-e e buscar os itens direto na SEFAZ (mais preciso que a foto).
-- Resumo semanal automático e lembrete de contas a vencer. Mensagem que o agente inicia (fora da janela de 24h) exige um template aprovado no WhatsApp.
-- Importar o extrato/fatura do cartão (OFX/CSV) para conciliar.
+O repositório também tem um agente que recebe fotos de cupons, áudios e textos pelo WhatsApp (via Bird) e lança os gastos com o Claude. Ele está **desativado**: a função não é publicada. Para religar no futuro, é preciso um número de WhatsApp só para o agente conectado no Bird.
+
+<details><summary>Como religar</summary>
+
+1. Em `supabase/config.toml`, descomente o bloco `[functions.whatsapp-webhook]` e faça push (a integração GitHub publica a função).
+2. Em **Edge Functions → Secrets**, cadastre: `ANTHROPIC_API_KEY`, `BIRD_API_KEY`, `BIRD_NUMERO_AGENTE` (ex. `+5547999998888`), `TRANSCRICAO_PROVEDOR` (`openai` ou `groq`) e `OPENAI_API_KEY` ou `GROQ_API_KEY`. Opcionais: `CLAUDE_MODELO` (padrão `claude-opus-5-5`) e `CLAUDE_ESFORCO` (padrão `medium`).
+3. Cadastre o WhatsApp de cada pessoa em `membros.telefone` (formato `+55DDDNÚMERO`). Só esses números são atendidos.
+4. No Bird, conecte o número em **WhatsApp → Numbers** (*I have my own number*), ligue **Enable conversations** e crie um webhook em **Platform tools → Webhooks** para `https://SEU_PROJECT_REF.supabase.co/functions/v1/whatsapp-webhook` com o evento `whatsapp.received`. Cadastre o segredo `whsec_...` como `BIRD_WEBHOOK_SECRET`.
+
+Testes do agente: `deno test --allow-env supabase/functions/tests/`.
+</details>

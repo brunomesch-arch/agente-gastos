@@ -21,6 +21,8 @@ export interface Base {
   mes: string;
   categorias: Categoria[];
   membros: Membro[];
+  /** A pessoa da casa que está logada (pelo e-mail). */
+  eu: Membro | undefined;
   recarregarBase: () => Promise<void>;
 }
 
@@ -129,7 +131,8 @@ function Painel({ email }: { email: string }) {
     }
   }, [aba]);
 
-  const base: Base = { mes, categorias, membros, recarregarBase };
+  const eu = membros.find((m) => m.email?.toLowerCase() === email.toLowerCase());
+  const base: Base = { mes, categorias, membros, eu, recarregarBase };
   const semAcesso = !erro && membros.length === 0 && categorias.length === 0;
 
   return (

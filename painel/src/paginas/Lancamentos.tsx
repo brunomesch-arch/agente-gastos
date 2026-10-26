@@ -1,20 +1,24 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Base } from "../App";
 import { Erro } from "../componentes";
 import {
   dataCurta,
+  dataPadrao,
+  dividirParcelas,
   FORMAS_PAGAMENTO,
-  hojeISO,
   type Lancamento,
+  lerValor,
   limitesMes,
   ok,
   reais,
+  somarMesesData,
   supabase,
 } from "../dados";
 
-const ORIGEM_ICONE: Record<string, string> = { foto: "📷", audio: "🎙️", texto: "💬", documento: "📄", painel: "🖥️" };
+const ORIGEM_ICONE: Record<string, string> = { foto: "📷", audio: "🎙️", texto: "💬", documento: "📄", painel: "" };
 
-export default function Lancamentos({ mes, categorias, membros }: Base) {
+export default function Lancamentos(base: Base) {
+  const { mes, categorias, membros } = base;
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
@@ -22,6 +26,7 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
   const [filtroMembro, setFiltroMembro] = useState("");
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState<number | null>(null);
+  const [editando, setEditando] = useState<Lancamento | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -45,6 +50,7 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
 
   useEffect(() => {
     carregar();
+    setEditando(null);
   }, [carregar]);
 
   const membro = (id: string | null) => membros.find((m) => m.id === id)?.nome ?? "—";
@@ -60,10 +66,10 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
   }, [lancamentos, filtroCategoria, filtroMembro, busca]);
   const total = filtrados.reduce((s, l) => s + Number(l.valor), 0);
 
-  async function alterar(id: number, campos: Partial<Lancamento>) {
+  async function alterarCategoria(id: number, categoria_id: number) {
     try {
-      ok(await supabase.from("lancamentos").update(campos).eq("id", id));
-      setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, ...campos } : l)));
+      ok(await supabase.from("lancamentos").update({ categoria_id }).eq("id", id));
+      setLancamentos((ls) => ls.map((l) => (l.id === id ? { ...l, categoria_id } : l)));
     } catch (e) {
       setErro((e as Error).message);
     }
@@ -74,6 +80,7 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
     try {
       ok(await supabase.from("lancamentos").delete().eq("id", l.id));
       setLancamentos((ls) => ls.filter((x) => x.id !== l.id));
+      if (editando?.id === l.id) setEditando(null);
     } catch (e) {
       setErro((e as Error).message);
     }
@@ -88,7 +95,16 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
   return (
     <div className={carregando ? "carregando" : ""}>
       <Erro erro={erro} />
-      <NovoGasto base={{ categorias, membros }} aoSalvar={carregar} />
+      <FormularioGasto
+        key={editando?.id ?? "novo"}
+        base={base}
+        editando={editando}
+        aoSalvar={() => {
+          setEditando(null);
+          carregar();
+        }}
+        aoCancelar={() => setEditando(null)}
+      />
 
       <section className="cartao">
         <div className="filtros">
@@ -134,21 +150,23 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
             </thead>
             <tbody>
               {filtrados.length === 0 && (
-                <tr><td colSpan={6} className="vazio">Nenhum gasto encontrado.</td></tr>
+                <tr><td colSpan={6} className="vazio">Nenhum gasto neste mês ainda. Lance no formulário acima.</td></tr>
               )}
               {filtrados.map((l) => (
                 <Fragment key={l.id}>
-                  <tr>
+                  <tr style={editando?.id === l.id ? { outline: "2px solid var(--acento)", outlineOffset: -2 } : undefined}>
                     <td>{dataCurta(l.data)}</td>
                     <td>
-                      <span title={l.origem}>{ORIGEM_ICONE[l.origem] ?? ""}</span> {l.descricao}
+                      {ORIGEM_ICONE[l.origem] && <span title={l.origem}>{ORIGEM_ICONE[l.origem]} </span>}
+                      {l.descricao}
                       {l.parcela && <span className="detalhe"> · parcela {l.parcela}</span>}
+                      {l.conta_fixa_id && <span className="detalhe"> · conta fixa</span>}
                       {l.estabelecimento && <div className="detalhe">{l.estabelecimento}</div>}
                     </td>
                     <td>
                       <select
                         value={l.categoria_id}
-                        onChange={(e) => alterar(l.id, { categoria_id: Number(e.target.value) })}
+                        onChange={(e) => alterarCategoria(l.id, Number(e.target.value))}
                         aria-label="Categoria"
                       >
                         {categorias.map((c) => (
@@ -169,6 +187,14 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
                         {l.comprovante_path && (
                           <button className="botao icone" onClick={() => verComprovante(l.comprovante_path!)} title="Ver comprovante">📎</button>
                         )}
+                        <button
+                          className="botao icone"
+                          onClick={() => {
+                            setEditando(l);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          title="Editar"
+                        >✎</button>
                         <button className="botao icone perigo" onClick={() => excluir(l)} title="Apagar">✕</button>
                       </div>
                     </td>
@@ -190,61 +216,127 @@ export default function Lancamentos({ mes, categorias, membros }: Base) {
             </tbody>
           </table>
         </div>
-        <p className="detalhe">
-          📷 foto · 🎙️ áudio · 💬 texto · 📄 documento · 🖥️ painel. Mude a categoria direto na lista.
-        </p>
+        <p className="detalhe">Mude a categoria direto na lista. ✎ edita o gasto no formulário acima.</p>
       </section>
     </div>
   );
 }
 
-function NovoGasto({ base, aoSalvar }: { base: Pick<Base, "categorias" | "membros">; aoSalvar: () => void }) {
-  const [valor, setValor] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [categoriaId, setCategoriaId] = useState("");
-  const [membroId, setMembroId] = useState("");
-  const [data, setData] = useState(hojeISO());
+/**
+ * Formulário para lançar gastos em sequência: depois de salvar, mantém categoria,
+ * pessoa, data e forma de pagamento, limpa valor e descrição e volta o cursor ao valor.
+ */
+function FormularioGasto({
+  base,
+  editando,
+  aoSalvar,
+  aoCancelar,
+}: {
+  base: Base;
+  editando: Lancamento | null;
+  aoSalvar: () => void;
+  aoCancelar: () => void;
+}) {
+  const { mes, categorias, membros, eu } = base;
+  const [valor, setValor] = useState(editando ? String(editando.valor).replace(".", ",") : "");
+  const [descricao, setDescricao] = useState(editando?.descricao ?? "");
+  const [estabelecimento, setEstabelecimento] = useState(editando?.estabelecimento ?? "");
+  const [categoriaId, setCategoriaId] = useState(editando ? String(editando.categoria_id) : "");
+  const [membroId, setMembroId] = useState(editando ? editando.membro_id ?? "" : eu?.id ?? "");
+  const [forma, setForma] = useState(editando?.forma_pagamento ?? "");
+  const [data, setData] = useState(editando?.data ?? dataPadrao(mes));
+  const [parcelas, setParcelas] = useState("1");
   const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [ultimo, setUltimo] = useState("");
+  const campoValor = useRef<HTMLInputElement>(null);
+
+  // Ao trocar de mês, a data padrão acompanha (só para lançamentos novos).
+  useEffect(() => {
+    if (!editando) setData(dataPadrao(mes));
+  }, [mes, editando]);
+
+  // A lista de pessoas chega depois do primeiro render: preenche "quem" quando chegar.
+  useEffect(() => {
+    if (!editando && !membroId && eu) setMembroId(eu.id);
+  }, [eu, editando, membroId]);
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
+    const total = lerValor(valor);
+    if (!(total > 0)) return setErro("Informe um valor maior que zero.");
+    setSalvando(true);
     try {
-      ok(
-        await supabase.from("lancamentos").insert({
-          valor: Number(valor.replace(",", ".")),
-          descricao,
-          categoria_id: Number(categoriaId),
-          membro_id: membroId || null,
-          data,
+      const comum = {
+        descricao: descricao.trim(),
+        estabelecimento: estabelecimento.trim() || null,
+        categoria_id: Number(categoriaId),
+        membro_id: membroId || null,
+        forma_pagamento: forma || null,
+      };
+      if (editando) {
+        ok(await supabase.from("lancamentos").update({ ...comum, valor: total, data }).eq("id", editando.id));
+      } else {
+        const n = Math.max(1, Math.min(48, Math.floor(Number(parcelas)) || 1));
+        const linhas = dividirParcelas(total, n).map((v, i) => ({
+          ...comum,
+          valor: v,
+          data: somarMesesData(data, i),
+          parcela: n > 1 ? `${i + 1}/${n}` : null,
           origem: "painel",
-        }),
-      );
-      setValor("");
-      setDescricao("");
+        }));
+        ok(await supabase.from("lancamentos").insert(linhas));
+        setUltimo(`✓ ${comum.descricao} · ${reais(total)}${n > 1 ? ` em ${n}×` : ""}`);
+        setValor("");
+        setDescricao("");
+        setEstabelecimento("");
+        setParcelas("1");
+        campoValor.current?.focus();
+      }
       setErro("");
       aoSalvar();
     } catch (e) {
       setErro((e as Error).message);
+    } finally {
+      setSalvando(false);
     }
   }
 
   return (
     <form className="cartao formulario" onSubmit={salvar} style={{ marginBottom: 12 }}>
-      <Erro erro={erro} />
+      <h2 style={{ width: "100%", margin: 0 }}>
+        {editando ? `Editar gasto de ${dataCurta(editando.data)}` : "Lançar gasto"}
+        {!editando && ultimo && <small>{ultimo}</small>}
+      </h2>
+      {erro && <div style={{ width: "100%" }}><Erro erro={erro} /></div>}
       <label className="campo">
         Valor (R$)
-        <input required inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} style={{ width: 110 }} />
+        <input ref={campoValor} required inputMode="decimal" placeholder="0,00" value={valor}
+          onChange={(e) => setValor(e.target.value)} style={{ width: 110 }} autoFocus />
       </label>
-      <label className="campo" style={{ flex: 1, minWidth: 160 }}>
+      <label className="campo" style={{ flex: 1, minWidth: 150 }}>
         Descrição
-        <input required value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+        <input required value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Compras do mês" />
+      </label>
+      <label className="campo" style={{ flex: 1, minWidth: 130 }}>
+        Onde
+        <input value={estabelecimento} onChange={(e) => setEstabelecimento(e.target.value)} placeholder="Loja (opcional)" />
       </label>
       <label className="campo">
         Categoria
         <select required value={categoriaId} onChange={(e) => setCategoriaId(e.target.value)}>
           <option value="">Escolha…</option>
-          {base.categorias.filter((c) => c.ativa).map((c) => (
+          {categorias.filter((c) => c.ativa || String(c.id) === categoriaId).map((c) => (
             <option key={c.id} value={c.id}>{c.emoji} {c.nome}</option>
+          ))}
+        </select>
+      </label>
+      <label className="campo">
+        Pagamento
+        <select value={forma} onChange={(e) => setForma(e.target.value)}>
+          <option value="">—</option>
+          {Object.entries(FORMAS_PAGAMENTO).map(([id, nome]) => (
+            <option key={id} value={id}>{nome}</option>
           ))}
         </select>
       </label>
@@ -252,7 +344,7 @@ function NovoGasto({ base, aoSalvar }: { base: Pick<Base, "categorias" | "membro
         Quem
         <select value={membroId} onChange={(e) => setMembroId(e.target.value)}>
           <option value="">—</option>
-          {base.membros.map((m) => (
+          {membros.map((m) => (
             <option key={m.id} value={m.id}>{m.nome}</option>
           ))}
         </select>
@@ -261,7 +353,15 @@ function NovoGasto({ base, aoSalvar }: { base: Pick<Base, "categorias" | "membro
         Data
         <input type="date" required value={data} onChange={(e) => setData(e.target.value)} />
       </label>
-      <button className="botao primario">Adicionar gasto</button>
+      {!editando && (
+        <label className="campo">
+          Parcelas
+          <input type="number" min="1" max="48" value={parcelas} onChange={(e) => setParcelas(e.target.value)} style={{ width: 70 }}
+            title="Compra parcelada: informe o valor total; cada parcela cai em um mês" />
+        </label>
+      )}
+      <button className="botao primario" disabled={salvando}>{editando ? "Salvar alteração" : "Lançar"}</button>
+      {editando && <button type="button" className="botao" onClick={aoCancelar}>Cancelar</button>}
     </form>
   );
 }
