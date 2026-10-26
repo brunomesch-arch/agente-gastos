@@ -48,9 +48,7 @@ supabase db push
 
 1. Em [vercel.com/new](https://vercel.com/new), importe o repositório `brunomesch-arch/agente-gastos`.
 2. **Root Directory:** `painel` (o framework Vite é detectado sozinho).
-3. **Environment Variables** — no Supabase, em **Project Settings → API** (ou **API Keys**):
-   - `VITE_SUPABASE_URL` = `https://SEU_PROJECT_REF.supabase.co`
-   - `VITE_SUPABASE_ANON_KEY` = a chave pública (*anon* ou *publishable*). Ela pode ir para o navegador: quem protege os dados é o login + RLS. **Nunca** use a *service_role*/*secret* aqui.
+3. Não precisa de variáveis de ambiente: a URL do Supabase e a chave pública (*publishable*) já estão em `painel/.env.production`. Essa chave foi feita para ir ao navegador; quem protege os dados é o login + RLS. **Nunca** coloque a chave *secret*/*service_role* nesse arquivo.
 4. **Deploy.** Copie o endereço gerado (ex.: `https://agente-gastos.vercel.app`).
 5. No Supabase, **Authentication → URL Configuration**: coloque esse endereço em *Site URL* e em *Redirect URLs*.
 
