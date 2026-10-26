@@ -8,6 +8,8 @@ export default function Ajustes({ categorias, membros, recarregarBase }: Base) {
   const [orcamentoTotal, setOrcamentoTotal] = useState("");
   const [novaCategoria, setNovaCategoria] = useState({ nome: "", emoji: "" });
   const [novoMembro, setNovoMembro] = useState({ nome: "", email: "" });
+  const [novaSenha, setNovaSenha] = useState("");
+  const [avisoSenha, setAvisoSenha] = useState("");
 
   useEffect(() => {
     supabase.from("configuracoes").select("valor").eq("chave", "orcamento_total_mensal").maybeSingle()
@@ -126,6 +128,24 @@ export default function Ajustes({ categorias, membros, recarregarBase }: Base) {
             <input type="email" required value={novoMembro.email} onChange={(e) => setNovoMembro({ ...novoMembro, email: e.target.value })} />
           </label>
           <button className="botao">Adicionar pessoa</button>
+        </form>
+      </section>
+
+      <section className="cartao secao">
+        <h2>Minha senha <small>para entrar no painel sem depender de e-mail</small></h2>
+        <form className="formulario" onSubmit={async (e) => {
+          e.preventDefault();
+          if (novaSenha.length < 8) return setAvisoSenha("Use pelo menos 8 caracteres.");
+          const { error } = await supabase.auth.updateUser({ password: novaSenha });
+          setAvisoSenha(error ? `Não deu para trocar: ${error.message}` : "✓ Senha alterada.");
+          if (!error) setNovaSenha("");
+        }}>
+          <label className="campo">
+            Nova senha
+            <input type="password" autoComplete="new-password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+          </label>
+          <button className="botao">Trocar senha</button>
+          {avisoSenha && <span className="detalhe">{avisoSenha}</span>}
         </form>
       </section>
     </div>

@@ -65,7 +65,9 @@ function explicarErroLogin(mensagem: string, status?: number): string {
 }
 
 function Login() {
+  const [modo, setModo] = useState<"senha" | "link">("senha");
   const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [estado, setEstado] = useState<"inicio" | "enviando" | "enviado">("inicio");
   const [erro, setErro] = useState("");
 
@@ -73,6 +75,18 @@ function Login() {
     e.preventDefault();
     setEstado("enviando");
     setErro("");
+    if (modo === "senha") {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha });
+      if (error) {
+        setErro(
+          error.message.toLowerCase().includes("invalid login")
+            ? "E-mail ou senha incorretos."
+            : explicarErroLogin(error.message, error.status),
+        );
+      }
+      setEstado("inicio"); // com sucesso, o App troca para o painel sozinho
+      return;
+    }
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       // Só entra quem já foi convidado no Supabase; ninguém cria conta sozinho.
@@ -98,10 +112,27 @@ function Login() {
           {erro && <div className="mensagem-erro">{erro}</div>}
           <label className="campo">
             E-mail
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+            <input type="email" required autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
           </label>
+          {modo === "senha" && (
+            <label className="campo">
+              Senha
+              <input type="password" required autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} />
+            </label>
+          )}
           <button className="botao primario" disabled={estado === "enviando"}>
-            {estado === "enviando" ? "Enviando…" : "Receber link de acesso"}
+            {estado === "enviando" ? "Entrando…" : modo === "senha" ? "Entrar" : "Receber link de acesso"}
+          </button>
+          <button
+            type="button"
+            className="botao"
+            style={{ border: 0, background: "none", color: "var(--texto-2)", fontSize: 13 }}
+            onClick={() => {
+              setModo(modo === "senha" ? "link" : "senha");
+              setErro("");
+            }}
+          >
+            {modo === "senha" ? "Prefiro receber um link por e-mail" : "Entrar com senha"}
           </button>
         </form>
       )}
