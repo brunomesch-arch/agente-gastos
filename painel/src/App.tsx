@@ -48,6 +48,22 @@ export default function App() {
   return <Painel email={sessao.user.email ?? ""} />;
 }
 
+/** Traduz os erros mais comuns do Supabase Auth, mantendo o texto original para diagnóstico. */
+function explicarErroLogin(mensagem: string, status?: number): string {
+  const m = mensagem.toLowerCase();
+  let explicacao = "Não deu para enviar o link.";
+  if (m.includes("rate limit") || status === 429) {
+    explicacao = "Limite de e-mails do Supabase atingido. Espere cerca de 1 hora e tente de novo.";
+  } else if (m.includes("seconds") || m.includes("security purposes")) {
+    explicacao = "Aguarde 1 minuto antes de pedir outro link.";
+  } else if (m.includes("signups not allowed") || m.includes("not found") || m.includes("user not")) {
+    explicacao = "Este e-mail não está cadastrado em Authentication → Users no Supabase.";
+  } else if (m.includes("redirect")) {
+    explicacao = "O endereço do painel não está liberado em Authentication → URL Configuration.";
+  }
+  return `${explicacao} (Detalhe: ${mensagem})`;
+}
+
 function Login() {
   const [email, setEmail] = useState("");
   const [estado, setEstado] = useState<"inicio" | "enviando" | "enviado">("inicio");
@@ -63,7 +79,7 @@ function Login() {
       options: { shouldCreateUser: false, emailRedirectTo: window.location.href.split("#")[0] },
     });
     if (error) {
-      setErro("Não deu para enviar o link. Confira se este e-mail foi convidado.");
+      setErro(explicarErroLogin(error.message, error.status));
       setEstado("inicio");
     } else {
       setEstado("enviado");
